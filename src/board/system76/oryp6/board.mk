@@ -6,6 +6,9 @@ EC=it5570e
 KEYMAP?=default
 SRC+=$(BOARD_DIR)/keymap/$(KEYMAP).c
 
+# Set keyboard LED mechanism
+KBLED=rgb_pwm
+
 # Set discrete GPU I2C bus
 CFLAGS+=-DI2C_DGPU=I2C_1
 
@@ -18,8 +21,8 @@ CFLAGS+=-DPS2_TOUCHPAD=PS2_3
 # Set smart charger parameters
 CFLAGS+=\
 	-DCHARGER_CHARGE_CURRENT=1536 \
-	-DCHARGER_CHARGE_VOLTAGE=16800 \
-	-DCHARGER_INPUT_CURRENT=13050
+	-DCHARGER_CHARGE_VOLTAGE=13050 \
+	-DCHARGER_INPUT_CURRENT=9230
 
 # Set battery charging thresholds
 CFLAGS+=\

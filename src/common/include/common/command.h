@@ -22,6 +22,18 @@ enum Command {
     CMD_FAN_GET = 7,
     // Set fan speeds
     CMD_FAN_SET = 8,
+    // Get keyboard map index
+    CMD_KEYMAP_GET = 9,
+    // Set keyboard map index
+    CMD_KEYMAP_SET = 10,
+    // Get LED value by index
+    CMD_LED_GET_VALUE = 11,
+    // Set LED value by index
+    CMD_LED_SET_VALUE = 12,
+    // Get LED color by index
+    CMD_LED_GET_COLOR = 13,
+    // Set LED color by index
+    CMD_LED_SET_COLOR = 14,
     //TODO
 };
 
@@ -43,5 +55,7 @@ enum CommandSpiFlag {
     // Write to backup ROM instead
     CMD_SPI_FLAG_BACKUP = (1 << 3),
 };
+
+#define CMD_LED_INDEX_ALL 0xFF
 
 #endif // _COMMON_COMMAND_H

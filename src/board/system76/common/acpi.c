@@ -16,7 +16,7 @@
 
 extern uint8_t sci_extra;
 
-uint8_t acpi_ecos = 0;
+enum EcOs acpi_ecos = EC_OS_NONE;
 
 static uint8_t fcmd = 0;
 static uint8_t fdat = 0;
@@ -56,8 +56,8 @@ void acpi_reset(void) {
     // Disable lid wake
     lid_wake = false;
 
-    // ECOS: No ACPI
-    acpi_ecos = 0;
+    // ECOS: No ACPI or driver
+    acpi_ecos = EC_OS_NONE;
 
 #if HAVE_LED_AIRPLANE_N
     // Clear airplane mode LED
@@ -128,6 +128,14 @@ uint8_t acpi_read(uint8_t addr) {
 
         ACPI_8(0x68, acpi_ecos);
 
+        case 0xBC:
+            data = battery_get_start_threshold();
+            break;
+
+        case 0xBD:
+            data = battery_get_end_threshold();
+            break;
+
         ACPI_8(0xCC, sci_extra);
 
         ACPI_8(0xCE, DCR2);
@@ -160,12 +168,12 @@ uint8_t acpi_read(uint8_t addr) {
         ACPI_8 (0xFD, fbuf[3]);
     }
 
-    DEBUG("acpi_read %02X = %02X\n", addr, data);
+    TRACE("acpi_read %02X = %02X\n", addr, data);
     return data;
 }
 
 void acpi_write(uint8_t addr, uint8_t data) {
-    DEBUG("acpi_write %02X = %02X\n", addr, data);
+    TRACE("acpi_write %02X = %02X\n", addr, data);
 
     switch (addr) {
         // Lid state and other flags
@@ -174,7 +182,15 @@ void acpi_write(uint8_t addr, uint8_t data) {
             break;
 
         case 0x68:
-            acpi_ecos = data;
+            acpi_ecos = (enum EcOs)data;
+            break;
+
+        case 0xBC:
+            battery_set_start_threshold(data);
+            break;
+
+        case 0xBD:
+            battery_set_end_threshold(data);
             break;
 
 #if HAVE_LED_AIRPLANE_N

@@ -5,8 +5,8 @@
 #include <common/debug.h>
 
 // Default values to disable battery charging thresholds
-#define BATTERY_START_DEFAULT   60
-#define BATTERY_END_DEFAULT     80
+#define BATTERY_START_DEFAULT   0
+#define BATTERY_END_DEFAULT     100
 
 // Represents a battery percentage level, below which charging will begin.
 // Valid values are [0, 100]

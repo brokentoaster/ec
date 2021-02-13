@@ -25,8 +25,8 @@ CFLAGS+=\
 
 # Set battery charging thresholds
 CFLAGS+=\
-	-DBATTERY_START_THRESHOLD=0 \
-	-DBATTERY_END_THRESHOLD=100
+	-DBATTERY_START_THRESHOLD=50 \
+	-DBATTERY_END_THRESHOLD=80
 
 # Add system76 common code
 include src/board/system76/common/common.mk

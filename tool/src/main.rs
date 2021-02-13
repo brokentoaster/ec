@@ -1,74 +1,43 @@
 use ectool::{
+    Access,
+    AccessLpcLinux,
     Ec,
     Error,
     Firmware,
+    StdTimeout,
     Spi,
     SpiRom,
     SpiTarget,
-    Timeout,
 };
 use std::{
     env,
     fs,
-    io,
     process,
-    str,
-    time::{Duration, Instant},
+    str::{self, FromStr},
+    time::Duration,
     thread,
 };
 
-pub struct StdTimeout {
-    instant: Instant,
-    duration: Duration,
-}
-
-impl StdTimeout {
-    pub fn new(duration: Duration) -> Self {
-        StdTimeout {
-            instant: Instant::now(),
-            duration
-        }
-    }
-}
-
-impl Timeout for StdTimeout {
-    fn reset(&mut self) {
-        self.instant = Instant::now();
-    }
-
-    fn running(&self) -> bool {
-        self.instant.elapsed() < self.duration
-    }
-}
-
-unsafe fn iopl() {
-    extern {
-        fn iopl(level: isize) -> isize;
-    }
-
-    if iopl(3) < 0 {
-        eprintln!("failed to get I/O permission: {}", io::Error::last_os_error());
-        process::exit(1);
-    }
+unsafe fn ec() -> Result<Ec<AccessLpcLinux>, Error> {
+    let access = AccessLpcLinux::new(Duration::new(1, 0))?;
+    Ec::new(access)
 }
 
 unsafe fn console() -> Result<(), Error> {
-    iopl();
+    //TODO: driver support for reading debug region?
+    let mut ec = ec()?;
+    let access = ec.access();
 
-    let mut ec = Ec::new(
-        StdTimeout::new(Duration::new(1, 0)),
-    )?;
-
-    let mut head = ec.debug(0) as usize;
+    let mut head = access.read_debug(0)? as usize;
     loop {
-        let tail = ec.debug(0) as usize;
+        let tail = access.read_debug(0)? as usize;
         if tail == 0 || head == tail {
             thread::sleep(Duration::from_millis(1));
         } else {
             while head != tail {
                 head += 1;
                 if head >= 256 { head = 1; }
-                let c = ec.debug(head as u8);
+                let c = access.read_debug(head as u8)?;
                 print!("{}", c as char);
             }
         }
@@ -91,7 +60,7 @@ unsafe fn flash_read<S: Spi>(spi: &mut SpiRom<S, StdTimeout>, rom: &mut [u8], se
     Ok(())
 }
 
-unsafe fn flash_inner(ec: &mut Ec<StdTimeout>, firmware: &Firmware, target: SpiTarget, scratch: bool) -> Result<(), Error> {
+unsafe fn flash_inner(ec: &mut Ec<AccessLpcLinux>, firmware: &Firmware, target: SpiTarget, scratch: bool) -> Result<(), Error> {
     let rom_size = 128 * 1024;
 
     let mut new_rom = firmware.data.to_vec();
@@ -177,14 +146,11 @@ unsafe fn flash(path: &str, target: SpiTarget) -> Result<(), Error> {
     println!("file board: {:?}", str::from_utf8(firmware.board));
     println!("file version: {:?}", str::from_utf8(firmware.version));
 
-    iopl();
-
-    let mut ec = Ec::new(
-        StdTimeout::new(Duration::new(1, 0)),
-    )?;
+    let mut ec = ec()?;
+    let data_size = ec.access().data_size();
 
     {
-        let mut data = [0; 256];
+        let mut data = vec![0; data_size];
         let size = ec.board(&mut data)?;
 
         let ec_board = &data[..size];
@@ -196,7 +162,7 @@ unsafe fn flash(path: &str, target: SpiTarget) -> Result<(), Error> {
     }
 
     {
-        let mut data = [0; 256];
+        let mut data = vec![0; data_size];
         let size = ec.version(&mut data)?;
 
         let ec_version = &data[..size];
@@ -232,15 +198,12 @@ unsafe fn flash(path: &str, target: SpiTarget) -> Result<(), Error> {
 }
 
 unsafe fn info() -> Result<(), Error> {
-    iopl();
-
-    let mut ec = Ec::new(
-        StdTimeout::new(Duration::new(1, 0)),
-    )?;
+    let mut ec = ec()?;
+    let data_size = ec.access().data_size();
 
     {
         print!("board: ");
-        let mut data = [0; 256];
+        let mut data = vec![0; data_size];
         let size = ec.board(&mut data)?;
         for &b in data[..size].iter() {
             print!("{}", b as char);
@@ -250,7 +213,7 @@ unsafe fn info() -> Result<(), Error> {
 
     {
         print!("version: ");
-        let mut data = [0; 256];
+        let mut data = vec![0; data_size];
         let size = ec.version(&mut data)?;
         for &b in data[..size].iter() {
             print!("{}", b as char);
@@ -262,11 +225,7 @@ unsafe fn info() -> Result<(), Error> {
 }
 
 unsafe fn print(message: &[u8]) -> Result<(), Error> {
-    iopl();
-
-    let mut ec = Ec::new(
-        StdTimeout::new(Duration::new(1, 0)),
-    )?;
+    let mut ec = ec()?;
 
     ec.print(message)?;
 
@@ -274,11 +233,7 @@ unsafe fn print(message: &[u8]) -> Result<(), Error> {
 }
 
 unsafe fn fan_get(index: u8) -> Result<(), Error> {
-    iopl();
-
-    let mut ec = Ec::new(
-        StdTimeout::new(Duration::new(1, 0)),
-    )?;
+    let mut ec = ec()?;
 
     let duty = ec.fan_get(index)?;
     println!("{}", duty);
@@ -287,13 +242,24 @@ unsafe fn fan_get(index: u8) -> Result<(), Error> {
 }
 
 unsafe fn fan_set(index: u8, duty: u8) -> Result<(), Error> {
-    iopl();
-
-    let mut ec = Ec::new(
-        StdTimeout::new(Duration::new(1, 0)),
-    )?;
+    let mut ec = ec()?;
 
     ec.fan_set(index, duty)
+}
+
+unsafe fn keymap_get(layer: u8, output: u8, input: u8) -> Result<(), Error> {
+    let mut ec = ec()?;
+
+    let value = ec.keymap_get(layer, output, input)?;
+    println!("{:04X}", value);
+
+    Ok(())
+}
+
+unsafe fn keymap_set(layer: u8, output: u8, input: u8, value: u16) -> Result<(), Error> {
+    let mut ec = ec()?;
+
+    ec.keymap_set(layer, output, input, value)
 }
 
 fn usage() {
@@ -302,12 +268,35 @@ fn usage() {
     eprintln!("  flash_backup [file]");
     eprintln!("  fan [index] <duty>");
     eprintln!("  info");
+    eprintln!("  keymap [layer] [output] [input] <value>");
     eprintln!("  print [message]");
+}
+
+fn parse_arg_opt<I: Iterator<Item=String>, F: FromStr>(args: &mut I, name: &str) -> Option<F> {
+    match args.next() {
+        Some(arg) => match arg.parse::<F>() {
+            Ok(ok) => Some(ok),
+            Err(_err) => {
+                eprintln!("failed to parse {}: '{}'", name, arg);
+                process::exit(1);
+            },
+        },
+        None  => None,
+    }
+}
+
+fn parse_arg<I: Iterator<Item=String>, F: FromStr>(args: &mut I, name: &str) -> F {
+    match parse_arg_opt(args, name) {
+        Some(some) => some,
+        None => {
+            eprintln!("no {} provided", name);
+            process::exit(1);
+        }
+    }
 }
 
 fn main() {
     let mut args = env::args().skip(1);
-
     match args.next() {
         Some(arg) => match arg.as_str() {
             "console" => match unsafe { console() } {
@@ -317,39 +306,25 @@ fn main() {
                     process::exit(1);
                 },
             },
-            "fan" => match args.next() {
-                Some(index_str) => match index_str.parse::<u8>() {
-                    Ok(index) => match args.next() {
-                        Some(duty_str) => match duty_str.parse::<u8>() {
-                            Ok(duty) => match unsafe { fan_set(index, duty) } {
-                                Ok(()) => (),
-                                Err(err) => {
-                                    eprintln!("failed to set fan {} to {}: {:X?}", index, duty, err);
-                                    process::exit(1);
-                                },
-                            },
-                            Err(err) => {
-                                eprintln!("failed to parse '{}': {:X?}", duty_str, err);
-                                process::exit(1);
-                            },
-                        },
-                        None => match unsafe { fan_get(index) } {
-                            Ok(()) => (),
-                            Err(err) => {
-                                eprintln!("failed to get fan {}: {:X?}", index, err);
-                                process::exit(1);
-                            },
+            "fan" => {
+                let index = parse_arg(&mut args, "index");
+                let duty_opt = parse_arg_opt(&mut args, "duty");
+                match duty_opt {
+                    Some(duty) => match unsafe { fan_set(index, duty) } {
+                        Ok(()) => (),
+                        Err(err) => {
+                            eprintln!("failed to set fan {} to {}: {:X?}", index, duty, err);
+                            process::exit(1);
                         },
                     },
-                    Err(err) => {
-                        eprintln!("failed to parse '{}': {:X?}", index_str, err);
-                        process::exit(1);
+                    None => match unsafe { fan_get(index) } {
+                        Ok(()) => (),
+                        Err(err) => {
+                            eprintln!("failed to get fan {}: {:X?}", index, err);
+                            process::exit(1);
+                        },
                     },
-                },
-                None => {
-                    eprintln!("no index provided");
-                    process::exit(1);
-                },
+                }
             },
             "flash" => match args.next() {
                 Some(path) => match unsafe { flash(&path, SpiTarget::Main) } {
@@ -383,6 +358,33 @@ fn main() {
                     eprintln!("failed to read info: {:X?}", err);
                     process::exit(1);
                 },
+            },
+            "keymap" => {
+                let layer = parse_arg(&mut args, "layer");
+                let output = parse_arg(&mut args, "output");
+                let input = parse_arg(&mut args, "input");
+                match args.next() {
+                    Some(value_str) => match u16::from_str_radix(value_str.trim_start_matches("0x"), 16) {
+                        Ok(value) => match unsafe { keymap_set(layer, output, input, value) } {
+                            Ok(()) => (),
+                            Err(err) => {
+                                eprintln!("failed to set keymap {}, {}, {} to {}: {:X?}", layer, output, input, value, err);
+                                process::exit(1);
+                            },
+                        },
+                        Err(err) => {
+                            eprintln!("failed to parse value: '{}': {}", arg, err);
+                            process::exit(1);
+                        }
+                    },
+                    None => match unsafe { keymap_get(layer, output, input) } {
+                        Ok(()) => (),
+                        Err(err) => {
+                            eprintln!("failed to get keymap {}, {}, {}: {:X?}", layer, output, input, err);
+                            process::exit(1);
+                        },
+                    },
+                }
             },
             "print" => for mut arg in args {
                 arg.push('\n');

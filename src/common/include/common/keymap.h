@@ -3,10 +3,40 @@
 #ifndef _COMMON_KEYMAP_H
 #define _COMMON_KEYMAP_H
 
+#include <stdbool.h>
 #include <stdint.h>
+
+// Keymap defined by board
+#if defined(KM_LAY) && defined(KM_OUT) && defined(KM_IN)
+    extern uint16_t __code KEYMAP[KM_LAY][KM_OUT][KM_IN];
+    extern uint16_t __xdata DYNAMIC_KEYMAP[KM_LAY][KM_OUT][KM_IN];
+    #define HAVE_KEYMAP 1
+#else
+    #define HAVE_KEYMAP 0
+#endif
+
+#if HAVE_KEYMAP
+    // Initialize the dynamic keymap
+    void keymap_init(void);
+    // Set the dynamic keymap to the default keymap
+    void keymap_load_default(void);
+    // Erase dynamic keymap in flash
+    bool keymap_erase_config(void);
+    // Load dynamic keymap from flash
+    bool keymap_load_config(void);
+    // Save dynamic keymap to flash
+    bool keymap_save_config(void);
+    // Get a keycode from the dynamic keymap
+    bool keymap_get(int layer, int output, int input, uint16_t * value);
+    // Set a keycode in the dynamic keymap
+    bool keymap_set(int layer, int output, int input, uint16_t value);
+#endif
 
 // Translate a keycode from PS/2 set 2 to PS/2 set 1
 uint16_t keymap_translate(uint16_t key);
+
+// Helper definition for empty key
+#define ___ 0
 
 // Key types
 #define KT_MASK (0xF000)
@@ -29,38 +59,51 @@ uint16_t keymap_translate(uint16_t key);
 #define KT_SCI (0x4000)
 
 #define SCI_DISPLAY_TOGGLE (0x0B)
+#define K_DISPLAY_TOGGLE (KT_SCI | SCI_DISPLAY_TOGGLE)
 #define SCI_BRIGHTNESS_DOWN (0x11)
+#define K_BRIGHTNESS_DOWN (KT_SCI | SCI_BRIGHTNESS_DOWN)
 #define SCI_BRIGHTNESS_UP (0x12)
+#define K_BRIGHTNESS_UP (KT_SCI | SCI_BRIGHTNESS_UP)
 #define SCI_CAMERA_TOGGLE (0x13)
+#define K_CAMERA_TOGGLE (KT_SCI | SCI_CAMERA_TOGGLE)
 #define SCI_AIRPLANE_MODE (0x14)
+#define K_AIRPLANE_MODE (KT_SCI | SCI_AIRPLANE_MODE)
 #define SCI_SUSPEND (0x15)
+#define K_SUSPEND (KT_SCI | SCI_SUSPEND)
 #define SCI_EXTRA (0x50)
 
 // Extra SCI layer for keyboard backlight control
 #define KT_SCI_EXTRA (0x8000)
 
 #define SCI_EXTRA_KBD_COLOR (0x80)
+#define K_KBD_COLOR (KT_SCI_EXTRA | SCI_EXTRA_KBD_COLOR)
 #define SCI_EXTRA_KBD_DOWN (0x81)
+#define K_KBD_DOWN (KT_SCI_EXTRA | SCI_EXTRA_KBD_DOWN)
 #define SCI_EXTRA_KBD_UP (0x82)
+#define K_KBD_UP (KT_SCI_EXTRA | SCI_EXTRA_KBD_UP)
 #define SCI_EXTRA_KBD_BKL (0x8A)
+#define K_KBD_BKL (KT_SCI_EXTRA | SCI_EXTRA_KBD_BKL)
 #define SCI_EXTRA_KBD_TOGGLE (0x9F)
+#define K_KBD_TOGGLE (KT_SCI_EXTRA | SCI_EXTRA_KBD_TOGGLE)
+#define SCI_EXTRA_FAN_TOGGLE (0xF2)
+#define K_FAN_TOGGLE (KT_SCI_EXTRA | SCI_EXTRA_FAN_TOGGLE)
 
 // See http://www.techtoys.com.hk/Downloads/Download/Microchip/PS2_driver/ScanCode.pdf
 
 // Should send 0xE0 before scancode bytes
-#define K_E0 (0x0100)
+#define KF_E0 (0x0100)
 
 // Hotkeys
 
-#define K_PLAY_PAUSE (K_E0 | 0x34)
-#define K_MUTE (K_E0 | 0x23)
-#define K_VOLUME_DOWN (K_E0 | 0x21)
-#define K_VOLUME_UP (K_E0 | 0x32)
+#define K_PLAY_PAUSE (KF_E0 | 0x34)
+#define K_MUTE (KF_E0 | 0x23)
+#define K_VOLUME_DOWN (KF_E0 | 0x21)
+#define K_VOLUME_UP (KF_E0 | 0x32)
 // More media keys
-#define K_MEDIA_NEXT (K_E0 | 0x4D)
-#define K_MEDIA_PREV (K_E0 | 0x15)
+#define K_MEDIA_NEXT (KF_E0 | 0x4D)
+#define K_MEDIA_PREV (KF_E0 | 0x15)
 // Custom scancode
-#define K_TOUCHPAD (K_E0 | 0x63)
+#define K_TOUCHPAD (KF_E0 | 0x63)
 
 // Function keys
 
@@ -124,7 +167,7 @@ uint16_t keymap_translate(uint16_t key);
 // Escape key
 #define K_ESC (0x76)
 
-//TODO: Print screen, scroll lock, pause
+//TODO: Print screen, scroll lock, pause, sys request, break
 
 // Tick/tilde key
 #define K_TICK (0x0E)
@@ -167,49 +210,49 @@ uint16_t keymap_translate(uint16_t key);
 // Left control key
 #define K_LEFT_CTRL (0x14)
 // Left super key
-#define K_LEFT_SUPER (K_E0 | 0x1F)
+#define K_LEFT_SUPER (KF_E0 | 0x1F)
 // Left alt key
 #define K_LEFT_ALT (0x11)
 // Space key
 #define K_SPACE (0x29)
 // Right alt key
-#define K_RIGHT_ALT (K_E0 | 0x11)
+#define K_RIGHT_ALT (KF_E0 | 0x11)
 // Right super key
-#define K_RIGHT_SUPER (K_E0 | 0x27)
+#define K_RIGHT_SUPER (KF_E0 | 0x27)
 // Application key
-#define K_APP (K_E0 | 0x2F)
+#define K_APP (KF_E0 | 0x2F)
 // Right control key
-#define K_RIGHT_CTRL (K_E0 | 0x14)
+#define K_RIGHT_CTRL (KF_E0 | 0x14)
 
 // Arrow keys and related
 
 // Insert key
-#define K_INSERT (K_E0 | 0x70)
+#define K_INSERT (KF_E0 | 0x70)
 // Delete key
-#define K_DEL (K_E0 | 0x71)
+#define K_DEL (KF_E0 | 0x71)
 // Home key
-#define K_HOME (K_E0 | 0x6C)
+#define K_HOME (KF_E0 | 0x6C)
 // End key
-#define K_END (K_E0 | 0x69)
+#define K_END (KF_E0 | 0x69)
 // Page up key
-#define K_PGUP (K_E0 | 0x7D)
+#define K_PGUP (KF_E0 | 0x7D)
 // Page down key
-#define K_PGDN (K_E0 | 0x7A)
+#define K_PGDN (KF_E0 | 0x7A)
 
-#define K_UP (K_E0 | 0x75)
-#define K_LEFT (K_E0 | 0x6B)
-#define K_DOWN (K_E0 | 0x72)
-#define K_RIGHT (K_E0 | 0x74)
+#define K_UP (KF_E0 | 0x75)
+#define K_LEFT (KF_E0 | 0x6B)
+#define K_DOWN (KF_E0 | 0x72)
+#define K_RIGHT (KF_E0 | 0x74)
 
 // Numpad
 
 #define K_NUM_LOCK (0x77)
-#define K_NUM_SLASH (K_E0 | 0x4A)
+#define K_NUM_SLASH (KF_E0 | 0x4A)
 #define K_NUM_ASTERISK (0x7C)
 #define K_NUM_MINUS (0x7B)
 #define K_NUM_PLUS (0x79)
 #define K_NUM_PERIOD (0x71)
-#define K_NUM_ENTER (K_E0 | 0x5A)
+#define K_NUM_ENTER (KF_E0 | 0x5A)
 #define K_NUM_0 (0x70)
 #define K_NUM_1 (0x69)
 #define K_NUM_2 (0x72)
@@ -220,5 +263,10 @@ uint16_t keymap_translate(uint16_t key);
 #define K_NUM_7 (0x6C)
 #define K_NUM_8 (0x75)
 #define K_NUM_9 (0x7D)
+
+// International keys
+
+#define K_INT_1 (0x61)
+#define K_INT_2 (0x5D)
 
 #endif // _COMMON_KEYMAP_H

@@ -2,11 +2,14 @@
 
 #include <arch/delay.h>
 #include <arch/time.h>
+#include <board/acpi.h>
+#include <board/fan.h>
 #include <board/gpio.h>
 #include <board/kbc.h>
 #include <board/kbled.h>
 #include <board/kbscan.h>
 #include <board/keymap.h>
+#include <board/lid.h>
 #include <board/pmc.h>
 #include <board/power.h>
 #include <common/debug.h>
@@ -16,11 +19,22 @@
 #define KM_NKEY 0
 #endif // KM_NKEY
 
+bool kbscan_fn_held = false;
+bool kbscan_esc_held = false;
+
 bool kbscan_enabled = false;
 uint16_t kbscan_repeat_period = 91;
 uint16_t kbscan_repeat_delay = 500;
 
 uint8_t sci_extra = 0;
+
+static inline bool matrix_position_is_esc(int row, int col) {
+    return (row == MATRIX_ESC_OUTPUT) && (col == MATRIX_ESC_INPUT);
+}
+
+static inline bool matrix_position_is_fn(int row, int col) {
+    return (row == MATRIX_FN_OUTPUT) && (col == MATRIX_FN_INPUT);
+}
 
 void kbscan_init(void) {
     KSOCTRL = 0x05;
@@ -91,7 +105,7 @@ static uint8_t kbscan_get_row(int i) {
 #endif
 
     // TODO: figure out optimal delay
-    delay_ticks(10);
+    delay_ticks(20);
 
     return ~KSI;
 }
@@ -112,6 +126,8 @@ static uint8_t kbscan_get_real_keys(int row, uint8_t rowdata) {
     // Remove any "active" blanks from the matrix.
     uint8_t realdata = 0;
     for (uint8_t col = 0; col < KM_IN; col++) {
+        // This tests the default keymap intentionally, to avoid blanks in the
+        // dynamic keymap
         if (KEYMAP[0][row][col] && (rowdata & (1 << col))) {
             realdata |=  1 << col;
         }
@@ -140,12 +156,41 @@ static bool kbscan_has_ghost_in_row(int row, uint8_t rowdata) {
 }
 #endif // KM_NKEY
 
+static void hardware_hotkey(uint16_t key) {
+    switch (key) {
+        case K_DISPLAY_TOGGLE:
+            gpio_set(&BKL_EN, !gpio_get(&BKL_EN));
+            break;
+        case K_CAMERA_TOGGLE:
+            gpio_set(&CCD_EN, !gpio_get(&CCD_EN));
+            break;
+        case K_FAN_TOGGLE:
+            fan_max = !fan_max;
+            break;
+        case K_KBD_BKL:
+            kbled_set(kbled_get() + 1);
+            break;
+        case K_KBD_COLOR:
+            if (acpi_ecos != EC_OS_FULL) kbled_hotkey_color();
+            break;
+        case K_KBD_DOWN:
+            if (acpi_ecos != EC_OS_FULL) kbled_hotkey_down();
+            break;
+        case K_KBD_UP:
+            if (acpi_ecos != EC_OS_FULL) kbled_hotkey_up();
+            break;
+        case K_KBD_TOGGLE:
+            if (acpi_ecos != EC_OS_FULL) kbled_hotkey_toggle();
+            break;
+    }
+}
+
 bool kbscan_press(uint16_t key, bool pressed, uint8_t * layer) {
+    // Wake from sleep on keypress
     if (pressed &&
+        lid_state &&
         (power_state == POWER_STATE_S3 || power_state == POWER_STATE_DS3)) {
-        gpio_set(&SWI_N, false);
-        delay_ticks(10); //TODO: find correct delay
-        gpio_set(&SWI_N, true);
+        pmc_swi();
     }
 
     switch (key & KT_MASK) {
@@ -179,11 +224,11 @@ bool kbscan_press(uint16_t key, bool pressed, uint8_t * layer) {
                 case COMBO_PRINT_SCREEN:
                     if (kbscan_enabled) {
                         if (pressed) {
-                            kbc_scancode(&KBC, K_E0 | 0x12, true);
-                            kbc_scancode(&KBC, K_E0 | 0x7C, true);
+                            kbc_scancode(&KBC, KF_E0 | 0x12, true);
+                            kbc_scancode(&KBC, KF_E0 | 0x7C, true);
                         } else {
-                            kbc_scancode(&KBC, K_E0 | 0x7C, false);
-                            kbc_scancode(&KBC, K_E0 | 0x12, false);
+                            kbc_scancode(&KBC, KF_E0 | 0x7C, false);
+                            kbc_scancode(&KBC, KF_E0 | 0x12, false);
                         }
                     }
                     break;
@@ -191,40 +236,33 @@ bool kbscan_press(uint16_t key, bool pressed, uint8_t * layer) {
             break;
         case (KT_SCI):
             if (pressed) {
-                uint8_t sci = (uint8_t)(key & 0xFF);
-
-                if (!pmc_sci(&PMC_1, sci)) {
-                    // In the case of ignored SCI, reset bit
-                    return false;
+                // Send SCI if ACPI OS is loaded
+                if (acpi_ecos != EC_OS_NONE) {
+                    uint8_t sci = (uint8_t)(key & 0xFF);
+                    if (!pmc_sci(&PMC_1, sci)) {
+                        // In the case of ignored SCI, reset bit
+                        return false;
+                    }
                 }
 
-                // HACK FOR HARDWARE HOTKEYS
-                switch (sci) {
-                    case SCI_DISPLAY_TOGGLE:
-                        gpio_set(&BKL_EN, !gpio_get(&BKL_EN));
-                        break;
-                    case SCI_CAMERA_TOGGLE:
-                        gpio_set(&CCD_EN, !gpio_get(&CCD_EN));
-                        break;
-                }
+                // Handle hardware hotkeys
+                hardware_hotkey(key);
             }
             break;
         case (KT_SCI_EXTRA):
             if (pressed) {
-                uint8_t sci = SCI_EXTRA;
-                sci_extra = (uint8_t)(key & 0xFF);
-
-                if (!pmc_sci(&PMC_1, sci)) {
-                    // In the case of ignored SCI, reset bit
-                    return false;
+                // Send SCI if ACPI OS is loaded
+                if (acpi_ecos != EC_OS_NONE) {
+                    uint8_t sci = SCI_EXTRA;
+                    sci_extra = (uint8_t)(key & 0xFF);
+                    if (!pmc_sci(&PMC_1, sci)) {
+                        // In the case of ignored SCI, reset bit
+                        return false;
+                    }
                 }
 
-                // HACK FOR HARDWARE HOTKEYS
-                switch (sci_extra) {
-                    case SCI_EXTRA_KBD_BKL:
-                        kbled_set(kbled_get() + 1);
-                        break;
-                }
+                // Handle hardware hotkeys
+                hardware_hotkey(key);
             }
             break;
     }
@@ -234,13 +272,13 @@ bool kbscan_press(uint16_t key, bool pressed, uint8_t * layer) {
 static inline bool key_should_repeat(uint16_t key) {
     switch (key) {
     case K_TOUCHPAD:
-    case (KT_SCI | SCI_AIRPLANE_MODE):
-    case (KT_SCI | SCI_CAMERA_TOGGLE):
-    case (KT_SCI | SCI_DISPLAY_TOGGLE):
-    case (KT_SCI | SCI_SUSPEND):
-    case (KT_SCI_EXTRA | SCI_EXTRA_KBD_BKL):
-    case (KT_SCI_EXTRA | SCI_EXTRA_KBD_COLOR):
-    case (KT_SCI_EXTRA | SCI_EXTRA_KBD_TOGGLE):
+    case K_AIRPLANE_MODE:
+    case K_CAMERA_TOGGLE:
+    case K_DISPLAY_TOGGLE:
+    case K_SUSPEND:
+    case K_KBD_BKL:
+    case K_KBD_COLOR:
+    case K_KBD_TOGGLE:
         return false;
     }
 
@@ -302,13 +340,20 @@ void kbscan_event(void) {
                         debounce = true;
                         debounce_time = time_get();
 
+                        // Check keys used for config reset
+                        if (matrix_position_is_esc(i, j))
+                            kbscan_esc_held = new_b;
+                        if (matrix_position_is_fn(i, j))
+                            kbscan_fn_held = new_b;
+
                         // Handle key press/release
                         if (new_b) {
                             // On a press, cache the layer the key was pressed on
                             kbscan_last_layer[i][j] = kbscan_layer;
                         }
                         uint8_t key_layer = kbscan_last_layer[i][j];
-                        uint16_t key = keymap(i, j, key_layer);
+                        uint16_t key = 0;
+                        keymap_get(key_layer, i, j, &key);
                         if (key) {
                             DEBUG("KB %d, %d, %d = 0x%04X, %d\n", i, j, key_layer, key, new_b);
                             if(!kbscan_press(key, new_b, &layer)){

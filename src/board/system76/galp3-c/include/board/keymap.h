@@ -3,9 +3,15 @@
 #ifndef _BOARD_KEYMAP_H
 #define _BOARD_KEYMAP_H
 
-#include <common/keymap.h>
+// Keymap layers (normal, Fn)
+#define KM_LAY 2
+// Keymap output pins
+#define KM_OUT 16
+// Keymap input pins
+#define KM_IN 8
 
-#define ___ 0
+// common/keymap.h requires KM_LAY, KM_OUT, and KM_IN definitions
+#include <common/keymap.h>
 
 // Conversion of physical layout to keyboard matrix
 #define LAYOUT( \
@@ -34,17 +40,12 @@
     { K56, ___, K3C, ___, K59, K0C, K4D, K3D } \
 }
 
-// Keymap output pins
-#define KM_OUT 16
-// Keymap input pins
-#define KM_IN 8
-// Keymap layers (normal, Fn)
-#define KM_LAY 2
+// Position of physical Esc key in the matrix
+#define MATRIX_ESC_INPUT    7
+#define MATRIX_ESC_OUTPUT   7
 
-// Keymap
-extern uint16_t __code KEYMAP[KM_LAY][KM_OUT][KM_IN];
-
-// Get a keycode from the keymap
-uint16_t keymap(int output, int input, int layer);
+// Position of physical Fn key in the matrix
+#define MATRIX_FN_INPUT     0
+#define MATRIX_FN_OUTPUT    6
 
 #endif // _BOARD_KEYMAP_H
